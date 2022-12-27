@@ -35,11 +35,11 @@ def authjwt_exception_handler(request: Request, exc: AuthJWTException):
 # later in endpoint protected
 @app.post('/login')
 def login(user: User, Authorize: AuthJWT = Depends()):
-    if user.username != "test" or user.password != "test":
+    if user.username != "string" or user.password != "string":
         raise HTTPException(status_code=401, detail="Bad username or pasword")
 
     # subject identifier for who this token is for example id or username from database
-    access_token = Authorize.create_access_token(subject=user.username)
+    access_token = Authorize.create_access_token(subject=user.username, fresh=True)
     refresh_token = Authorize.create_refresh_token(subject=user.username)
     return { "access_token": access_token, "refresh_token": refresh_token}
 
@@ -67,8 +67,32 @@ def refresh(Authorize: AuthJWT = Depends()):
     # 에러 발생 => {"detail": "Only refresh tokens are allowed" }
 
     current_user = Authorize.get_jwt_subject()
-    new_access_token = Authorize.create_access_token(subject=current_user)
+    new_access_token = Authorize.create_access_token(subject=current_user, fresh=False)
     return { "access_token": new_access_token}
+
+
+@app.post('/fresh-login')
+def fresh_login(user: User, Authorize: AuthJWT = Depends()):
+    """
+    Fresh login endpoint. This is designed to be used if we need to
+    make a fresh token for a user (by verifying they have the
+    correct username and password). Unlike the standard login endpoint,
+    this will only return a new access token, so that we don't keep
+    generating new refresh tokens, which entirely defeats their point.
+    """
+    if user.username != "string" and user.password != "string":
+        raise HTTPException(status_code=401, detail="Bad username or password")
+    new_access_token = Authorize.create_access_token(subject=user.username, fresh=True)
+    return { "access_token": new_access_token}
+
+
+# Any valid JWT access token can access this endpoint
+@app.get("/protected")
+def protected(Authorize: AuthJWT = Depends()):
+    Authorize.jwt_required()
+
+    current_user = Authorize.get_jwt_subject()
+    return { "user": current_user}
 
 
 @app.get('/partially-protected')
@@ -78,4 +102,13 @@ def partially_protected(Authorize: AuthJWT = Depends()):
     Authorize.jwt_optional()
     # If no jwt is sent in the request, get_jwt_subject() will return None
     current_user = Authorize.get_jwt_subject() or "anonymous"
+    return { "user": current_user}
+
+
+# Only fresh JWT access token can access this endpoint
+@app.get('/protected-fresh')
+def protected_fresh(Authorize: AuthJWT = Depends()):
+    Authorize.fresh_jwt_required()
+
+    current_user = Authorize.get_jwt_subject()
     return { "user": current_user}
