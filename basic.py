@@ -15,6 +15,8 @@ class User(BaseModel):
 # in production you can use Settings management
 class Settings(BaseModel):
     authjwt_secret_key: str = "secret"
+    authjwt_denylist_enabled: bool = True
+    authjwt_denylist_token_checks: set = { "access", "refresh"}
 
 
 # callback to get your configuration
@@ -28,6 +30,17 @@ def get_config():
 @app.exception_handler(AuthJWTException)
 def authjwt_exception_handler(request: Request, exc: AuthJWTException):
     return JSONResponse(status_code=exc.status_code, content={ "detail": exc.message})
+
+
+# A storage engine to save revoked tokens. in production,
+# you can use Redis for storage system
+denylist = set()
+
+
+@AuthJWT.token_in_denylist_loader
+def check_if_token_in_denylist(decrypted_token):
+    jti = decrypted_token['jti']
+    return jti in denylist
 
 
 # provide a method to create access tokens. The create_access_token()
@@ -69,6 +82,26 @@ def refresh(Authorize: AuthJWT = Depends()):
     current_user = Authorize.get_jwt_subject()
     new_access_token = Authorize.create_access_token(subject=current_user, fresh=False)
     return { "access_token": new_access_token}
+
+
+# Endpoint for revoking the current users access token
+@app.delete("/access-revoke")
+def access_revoke(Authorize: AuthJWT = Depends()):
+    Authorize.jwt_required()
+
+    jti = Authorize.get_raw_jwt()['jti']
+    denylist.add(jti)
+    return { "detail": "Access token has been revoke"}
+
+
+# Endpoint for revoking the current users refresh token
+@app.delete("/refresh-revoke")
+def refresh_revoke(Authorize: AuthJWT = Depends()):
+    Authorize.jwt_refresh_token_required()
+
+    jti = Authorize.get_raw_jwt()['jti']
+    denylist.add(jti)
+    return { "detail": "Refresh token has been revoke"}
 
 
 @app.post('/fresh-login')
