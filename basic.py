@@ -15,6 +15,8 @@ class User(BaseModel):
 # in production you can use Settings management
 class Settings(BaseModel):
     authjwt_secret_key: str = "secret"
+    authjwt_token_location: set = {"cookies"}
+    authjwt_cookie_csrf_protect: bool = False
     authjwt_denylist_enabled: bool = True
     authjwt_denylist_token_checks: set = { "access", "refresh"}
 
@@ -54,6 +56,10 @@ def login(user: User, Authorize: AuthJWT = Depends()):
     # subject identifier for who this token is for example id or username from database
     access_token = Authorize.create_access_token(subject=user.username, fresh=True)
     refresh_token = Authorize.create_refresh_token(subject=user.username)
+
+    # Set the JWT Cookies in the response
+    Authorize.set_access_cookies(access_token)
+    Authorize.set_refresh_cookies(refresh_token)
     return { "access_token": access_token, "refresh_token": refresh_token}
 
 
@@ -81,7 +87,16 @@ def refresh(Authorize: AuthJWT = Depends()):
 
     current_user = Authorize.get_jwt_subject()
     new_access_token = Authorize.create_access_token(subject=current_user, fresh=False)
+    Authorize.set_access_cookies(new_access_token)
     return { "access_token": new_access_token}
+
+
+@app.delete('/logout')
+def logout(Authorize: AuthJWT = Depends()):
+    Authorize.jwt_required()
+
+    Authorize.unset_jwt_cookies()
+    return { "msg": "Successfully logout"}
 
 
 # Endpoint for revoking the current users access token
